@@ -53,8 +53,9 @@ class Trainer:
 
     def normalize_reward(self, reward):
         if self.max_reward > self.min_reward:
-            return (reward - self.min_reward) / (self.max_reward - self.min_reward)
-        return reward  # If min and max rewards are the same, return the reward unaltered.
+            normalized_reward = (reward - self.min_reward) / (self.max_reward - self.min_reward)
+            return max(0, normalized_reward)  # Ensure the reward does not go below 0
+        return max(0, reward)  # If min and max rewards are the same, return the reward clipped at 0.
 
     def train(self, num_episodes):
         self.warmup_buffer()  # Warm-up before training
