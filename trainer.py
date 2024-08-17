@@ -3,15 +3,18 @@ from torch.utils.tensorboard import SummaryWriter
 import os
 import matplotlib.pyplot as plt
 from agent import DQNAgent
-from utils import preprocess_state,FrameStack
+from utils import preprocess_state, FrameStack
 import numpy as np
 from datetime import datetime
 
 class Trainer:
-    def __init__(self, env, agent, log_dir='logs', model_dir='models', frame_stack_size=4):
+    def __init__(self, env, agent, log_dir='logs', model_dir='models', frame_stack_size=4, warmup_steps=10000):
         self.env = env
         self.agent = agent
         self.frame_stack = FrameStack(num_frames=frame_stack_size, height=80, width=80)
+        self.warmup_steps = warmup_steps
+        self.min_reward = float('inf')
+        self.max_reward = float('-inf')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.log_dir = os.path.join(log_dir, timestamp)
         self.writer = SummaryWriter(log_dir=self.log_dir)
@@ -23,46 +26,38 @@ class Trainer:
         self.fig, self.ax = plt.subplots()
         self.img_displayed = None
         plt.ion()
-    def show_state(self, state, episode, step, reward):
-    # Check if state is a NumPy array or PyTorch tensor
-        if isinstance(state, torch.Tensor):
-            # If it's a PyTorch tensor
-            state = state.cpu().numpy()  # Convert to numpy array for processing
 
-        elif isinstance(state, np.ndarray):
-            # If it's already a NumPy array
-            pass
-        else:
-            raise TypeError("State must be either a PyTorch tensor or a NumPy array")
+    def warmup_buffer(self):
+        print(f"Starting warm-up for {self.warmup_steps} steps...")
+        state = self.env.reset()
+        state = preprocess_state(state[0], self.agent.device)
+        state = self.frame_stack.reset(state)
+        for _ in range(self.warmup_steps):
+            action = self.env.action_space.sample()  # Random action
+            next_state, reward, done, info, _ = self.env.step(action)
+            next_state = preprocess_state(next_state, self.agent.device)
+            next_state = self.frame_stack.append(next_state)
 
-        # Check dimensions of the state array
-        print(f"State shape: {state.shape}")
+            # Track min and max reward for normalization
+            self.min_reward = min(self.min_reward, reward)
+            self.max_reward = max(self.max_reward, reward)
 
-        if len(state.shape) == 4:  # (num_frames, height, width, channels)
-            # Take the last frame in the stack
-            state = state[-1]
-        elif len(state.shape) == 3:  # (height, width, channels) or (height, width)
-            if state.shape[2] == 1:  # (height, width, 1) - Grayscale image with single channel
-                state = np.squeeze(state, axis=-1)  # Remove channel dimension
-            # No need to reshape if it's (height, width, channels)
-        elif len(state.shape) == 2:  # (height, width) - Grayscale image without channel dimension
-            state = np.expand_dims(state, axis=-1)  # Add channel dimension
+            self.agent.store_transition(state, action, reward, next_state, done)
+            if done:
+                state = self.env.reset()
+                state = preprocess_state(state[0], self.agent.device)
+                state = self.frame_stack.reset(state)
+            else:
+                state = next_state
+        print("Warm-up complete. Starting training...")
 
-        # Ensure state is in the correct format for visualization
-        if len(state.shape) == 3 and state.shape[2] == 1:
-            state = np.squeeze(state, axis=-1)  # Remove channel dimension if it's 1
+    def normalize_reward(self, reward):
+        if self.max_reward > self.min_reward:
+            return (reward - self.min_reward) / (self.max_reward - self.min_reward)
+        return reward  # If min and max rewards are the same, return the reward unaltered.
 
-        # Plot the state
-        if self.img_displayed is None:
-            self.img_displayed = self.ax.imshow(state)
-        else:
-            self.img_displayed.set_data(state)
-
-        # Update the title and draw
-        self.ax.set_title(f"Episode: {episode}, Step: {step}, Total Reward: {reward}")
-        plt.pause(0.001)
-        self.fig.canvas.draw_idle()
     def train(self, num_episodes):
+        self.warmup_buffer()  # Warm-up before training
         total_time = 0
         ave_rewards = []
         episode_rewards = []
@@ -70,7 +65,6 @@ class Trainer:
             state = self.env.reset()
             try:
                 state = preprocess_state(state[0], self.agent.device)
-                #print(state.shape)
                 state = self.frame_stack.reset(state)
             except Exception as e:
                 print(f"Error preprocessing state at episode {episode}: {e}")
@@ -84,8 +78,8 @@ class Trainer:
                 action = self.agent.select_action(state)
                 next_state, reward, done, info, _ = self.env.step(action)
                 try:
+                    reward = self.normalize_reward(reward)  # Normalize reward
                     next_state = preprocess_state(next_state, self.agent.device)
-                    #print("Next state after pre-processing",next_state.shape)
                     next_state = self.frame_stack.append(next_state)
                 except Exception as e:
                     print(f"Error preprocessing next state at episode {episode}: {e}")
@@ -93,11 +87,11 @@ class Trainer:
 
                 self.agent.store_transition(state, action, reward, next_state, done)
                 self.agent.update_policy(self.writer)
-                #self.show_state(next_state, episode, time_step, total_reward)
 
                 state = next_state
                 total_reward += reward
                 time_step += 1
+
             total_time += time_step
             episode_rewards.append(total_reward)
             mean_reward = round(np.mean(episode_rewards[-5:]), 3)
@@ -114,6 +108,7 @@ class Trainer:
             print(f"Episode {episode + 1}/{num_episodes}: Total Reward: {total_reward} Time Step: {time_step} Total Time: {total_time}")
         self.writer.close()
         plt.close(self.fig)
+
     def evaluate(self, num_eval_episodes):
         total_rewards = []
 
@@ -122,7 +117,6 @@ class Trainer:
             self.env.render()
             try:
                 state = preprocess_state(state[0], self.agent.device)
-                #state = self.frame_stack.reset(state)
             except Exception as e:
                 print(f"Error preprocessing state at eval episode {episode}: {e}")
                 continue
@@ -134,7 +128,6 @@ class Trainer:
                 next_state, reward, done, info, _ = self.env.step(action)
                 try:
                     next_state = preprocess_state(next_state, self.agent.device)
-                    #next_state = self.frame_stack.append(next_state)
                 except Exception as e:
                     print(f"Error preprocessing next state at eval episode {episode}: {e}")
                     break
