@@ -20,6 +20,8 @@ frame_stack_size = 4  # Number of frames to stack
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Create the Air Raid environment
+# when creating the environment for simulating the episodes use render_mode as human
+#env = gym.make("ALE/AirRaid-v5",render_mode = "human")
 env = gym.make("ALE/AirRaid-v5")
 input_shape = (frame_stack_size, 80, 80)  # Adjusted to (C, H, W) after preprocessing
 num_actions = env.action_space.n
@@ -45,6 +47,7 @@ trainer = Trainer(env, agent, frame_stack_size=frame_stack_size)
 
 
 # Train the agent
+# Comment the below line while simulating
 trainer.train(num_episodes=num_episodes)
 
 #model_path = r'C:\Users\hemas\Documents\Applied_AI_and_ML_Courses\Reinforcement_Learning\Airraid_DQN\sachin_code\models\dqn_airraid_550.pth'
