@@ -1,1 +1,5 @@
-# Airraid_DQN
+# Enhancing Atari Air Raid Gameplay with DQN Parameter Optimization
+
+This project aims to train an agent to play the Atari game Air Raid by utilizing Deep Q-Network (DQN), a reinforcement learning algorithm that integrates Q-learning with deep neural networks. By adjusting key parameters such as learning rate, discount factor, replay buffer size, batch size, and epsilon decay rate, we seek to understand how these parameters affect the training efficiency and identify the optimal parameter configurations that will enhance the learning capability and performance of the DQN.
+
+Air Raid presents a challenging environment where the agent controls a ship tasked with shooting down enemy aircraft while avoiding getting shot. The game requires strategic decision-making and quick reflexes, making it an ideal testbed for reinforcement learning algorithms like DQN. The DQN is designed to handle high-dimensional state spaces, such as the visual inputs from Atari games, by approximating the optimal action-value function to guide the agent's decisions. By optimizing the DQN's parameters, we aim to enhance its ability to navigate and 
